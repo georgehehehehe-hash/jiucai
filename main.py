@@ -3,9 +3,17 @@ import requests
 from fastapi import FastAPI, HTTPException
 from PIL import Image
 from google.cloud import storage
+import os  # <-- 导入 os 模块
 
 # --- 配置 ---
-GCS_BUCKET_NAME = "your-gcs-bucket-name"  # <-- 替换成您的 GCS 存储桶名称！
+# 从环境变量中读取存储桶名称。如果环境变量不存在，程序会中断（这是一个好的安全做法）。
+# os.environ.get() 也可以用于提供一个默认值，但对于关键配置，最好是中断或抛出错误。
+try:
+    GCS_BUCKET_NAME = os.environ['GCS_BUCKET_NAME']
+except KeyError:
+    # 如果环境变量未设置，抛出异常，阻止服务启动
+    raise Exception("GCS_BUCKET_NAME environment variable not set. Deployment failed.")
+
 GRID_SIZE = 4  # 4x4 宫格
 
 # 初始化 FastAPI 和 GCS 客户端
