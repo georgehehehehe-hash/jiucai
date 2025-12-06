@@ -73,7 +73,7 @@ async def slice_image(request_body: dict):
             blob.upload_from_file(img_byte_arr, content_type='image/jpeg')
 
             # 设置公开访问权限 (如果存储桶策略允许)
-            blob.make_public()
+            # blob.make_public()
 
             results.append(blob.public_url)
 
