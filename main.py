@@ -4,6 +4,8 @@ from fastapi import FastAPI, HTTPException
 from PIL import Image
 from google.cloud import storage
 import os  # <-- 导入 os 模块
+from urllib.parse import urlparse
+
 
 # --- 配置 ---
 # 从环境变量中读取存储桶名称。如果环境变量不存在，程序会中断（这是一个好的安全做法）。
@@ -27,6 +29,12 @@ async def slice_image(request_body: dict):
     接收图片 URL，切割成 4x4 宫格，上传到 GCS，并返回 16 个 URL。
     """
     image_url = request_body.get("imageUrl")
+
+    # 提取 URL 唯一 ID：取文件名去掉后缀
+    parsed = urlparse(image_url)
+    basename = os.path.basename(parsed.path)          # 例如: ComfyUI_00002_rpdih_1764992089.png
+    unique_id = os.path.splitext(basename)[0]         # 取 ComfyUI_00002_rpdih_1764992089
+    
     if not image_url:
         raise HTTPException(status_code=400, detail="Missing 'imageUrl' in request body.")
 
@@ -66,7 +74,9 @@ async def slice_image(request_body: dict):
             img_byte_arr.seek(0)
 
             # 文件名：使用时间戳和序号确保唯一性
-            filename = f"slice_{W}x{H}_{i * GRID_SIZE + j + 1}.jpg"
+            # filename = f"slice_{W}x{H}_{i * GRID_SIZE + j + 1}.jpg"
+            # 文件名：加入 unique_id
+            filename = f"{unique_id}_slice_{W}x{H}_{i * GRID_SIZE + j + 1}.jpg"
 
             # 上传到 GCS
             blob = bucket.blob(filename)
