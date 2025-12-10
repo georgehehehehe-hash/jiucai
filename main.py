@@ -16,7 +16,9 @@ except KeyError:
     # 如果环境变量未设置，抛出异常，阻止服务启动
     raise Exception("GCS_BUCKET_NAME environment variable not set. Deployment failed.")
 
-GRID_SIZE = 4  # 4x4 宫格
+# GRID_SIZE = 4  # 4x4 宫格
+
+GRID_SIZE = 6
 
 # 初始化 FastAPI 和 GCS 客户端
 app = FastAPI()
