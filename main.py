@@ -3,7 +3,7 @@ import requests
 from fastapi import FastAPI, HTTPException
 from PIL import Image
 from google.cloud import storage
-import os 
+import os
 from urllib.parse import urlparse
 
 # --- 配置 ---
@@ -12,187 +12,76 @@ try:
 except KeyError:
     raise Exception("GCS_BUCKET_NAME environment variable not set. Deployment failed.")
 
-GRID_SIZE = 6 # 切割成 6x6 宫格
+GRID_SIZE = 6  # 切成 6x6
 
-# 初始化 FastAPI 和 GCS 客户端
+# 初始化
 app = FastAPI()
 storage_client = storage.Client()
 
 
 @app.post("/slice")
 async def slice_image(request_body: dict):
-    """
-    接收图片 URL，切割成 6x6 宫格，上传到 GCS，并返回 36 个 URL。 # <--- 修正 1
-    """
     image_url = request_body.get("imageUrl")
 
-    # 提取 URL 唯一 ID：取文件名去掉后缀
-    parsed = urlparse(image_url)
-    basename = os.path.basename(parsed.path)
-    unique_id = os.path.splitext(basename)[0]
-    
     if not image_url:
         raise HTTPException(status_code=400, detail="Missing 'imageUrl' in request body.")
 
+    parsed = urlparse(image_url)
+    basename = os.path.basename(parsed.path)
+    unique_id = os.path.splitext(basename)[0]
+
     # 1. 下载图片
     try:
-        response = requests.get(image_url, stream=True)
-        response.raise_for_status()
-        original_img = Image.open(io.BytesIO(response.content))
+        resp = requests.get(image_url, stream=True)
+        resp.raise_for_status()
+        img = Image.open(io.BytesIO(resp.content))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to download or open image: {e}")
 
-    # 确保图片尺寸可被 GRID_SIZE (即 6) 整除
-    W, H = original_img.size
+    W, H = img.size
+
+    # ------------------------------------------------------
+    # ⭐ 自动调整尺寸到可被 6 整除（自动裁剪）
+    # ------------------------------------------------------
+    new_w = W - (W % GRID_SIZE)
+    new_h = H - (H % GRID_SIZE)
+
+    if new_w != W or new_h != H:
+        img = img.crop((0, 0, new_w, new_h))
+        W, H = new_w, new_h
+    # ------------------------------------------------------
+
     w_slice = W // GRID_SIZE
     h_slice = H // GRID_SIZE
-
-    if W % GRID_SIZE != 0 or H % GRID_SIZE != 0:
-        # <--- 修正 2: 错误提示应该与 GRID_SIZE 保持一致
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Image dimensions ({W}x{H}) are not divisible by {GRID_SIZE}."
-        )
 
     bucket = storage_client.bucket(GCS_BUCKET_NAME)
     results = []
 
     # 2. 切割并上传
-    # 循环次数为 GRID_SIZE * GRID_SIZE，即 6 * 6 = 36 次
-    for i in range(GRID_SIZE):  # 行 (0 到 5)
-        for j in range(GRID_SIZE):  # 列 (0 到 5)
-            # 裁剪坐标 (left, upper, right, lower)
+    for i in range(GRID_SIZE):
+        for j in range(GRID_SIZE):
             left = j * w_slice
             upper = i * h_slice
-            right = (j + 1) * w_slice
-            lower = (i + 1) * h_slice
+            right = left + w_slice
+            lower = upper + h_slice
 
-            cropped_img = original_img.crop((left, upper, right, lower))
+            cropped = img.crop((left, upper, right, lower))
 
-            # ... 后续上传逻辑保持不变，它已经正确地使用了 GRID_SIZE ...
-            img_byte_arr = io.BytesIO()
-            cropped_img.save(img_byte_arr, format="JPEG")
-            img_byte_arr.seek(0)
+            img_bytes = io.BytesIO()
+            cropped.save(img_bytes, format="JPEG")
+            img_bytes.seek(0)
 
-            filename = f"{unique_id}_slice_{W}x{H}_{i * GRID_SIZE + j + 1}.jpg"
+            index = i * GRID_SIZE + j + 1
+            filename = f"{unique_id}_slice_{W}x{H}_{index}.jpg"
 
             blob = bucket.blob(filename)
-            blob.upload_from_file(img_byte_arr, content_type='image/jpeg')
+            blob.upload_from_file(img_bytes, content_type="image/jpeg")
 
             results.append(blob.public_url)
 
     return {"status": "success", "urls": results}
 
 
-# 用于健康检查
 @app.get("/")
-def read_root():
+def root():
     return {"Hello": "Image Slicer API is running"}
-
-
-
-
-
-
-
-
-
-
-# import io
-# import requests
-# from fastapi import FastAPI, HTTPException
-# from PIL import Image
-# from google.cloud import storage
-# import os  # <-- 导入 os 模块
-# from urllib.parse import urlparse
-
-
-# # --- 配置 ---
-# # 从环境变量中读取存储桶名称。如果环境变量不存在，程序会中断（这是一个好的安全做法）。
-# # os.environ.get() 也可以用于提供一个默认值，但对于关键配置，最好是中断或抛出错误。
-# try:
-#     GCS_BUCKET_NAME = os.environ['GCS_BUCKET_NAME']
-# except KeyError:
-#     # 如果环境变量未设置，抛出异常，阻止服务启动
-#     raise Exception("GCS_BUCKET_NAME environment variable not set. Deployment failed.")
-
-# # GRID_SIZE = 4  # 4x4 宫格
-
-# GRID_SIZE = 6
-
-# # 初始化 FastAPI 和 GCS 客户端
-# app = FastAPI()
-# storage_client = storage.Client()
-
-
-# @app.post("/slice")
-# async def slice_image(request_body: dict):
-#     """
-#     接收图片 URL，切割成 4x4 宫格，上传到 GCS，并返回 16 个 URL。
-#     """
-#     image_url = request_body.get("imageUrl")
-
-#     # 提取 URL 唯一 ID：取文件名去掉后缀
-#     parsed = urlparse(image_url)
-#     basename = os.path.basename(parsed.path)          # 例如: ComfyUI_00002_rpdih_1764992089.png
-#     unique_id = os.path.splitext(basename)[0]         # 取 ComfyUI_00002_rpdih_1764992089
-    
-#     if not image_url:
-#         raise HTTPException(status_code=400, detail="Missing 'imageUrl' in request body.")
-
-#     # 1. 下载图片
-#     try:
-#         response = requests.get(image_url, stream=True)
-#         response.raise_for_status()
-#         original_img = Image.open(io.BytesIO(response.content))
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Failed to download or open image: {e}")
-
-#     # 确保图片是正方形，或者可以被 4 整除 (您的图片是 4x4)
-#     W, H = original_img.size
-#     w_slice = W // GRID_SIZE
-#     h_slice = H // GRID_SIZE
-
-#     if W % GRID_SIZE != 0 or H % GRID_SIZE != 0:
-#         raise HTTPException(status_code=400, detail="Image dimensions are not divisible by 4.")
-
-#     bucket = storage_client.bucket(GCS_BUCKET_NAME)
-#     results = []
-
-#     # 2. 切割并上传
-#     for i in range(GRID_SIZE):  # 行 (0, 1, 2, 3)
-#         for j in range(GRID_SIZE):  # 列 (0, 1, 2, 3)
-#             # 裁剪坐标 (left, upper, right, lower)
-#             left = j * w_slice
-#             upper = i * h_slice
-#             right = (j + 1) * w_slice
-#             lower = (i + 1) * h_slice
-
-#             cropped_img = original_img.crop((left, upper, right, lower))
-
-#             # 将图片保存到内存中，准备上传
-#             img_byte_arr = io.BytesIO()
-#             cropped_img.save(img_byte_arr, format="JPEG")  # 假设保存为 JPEG
-#             img_byte_arr.seek(0)
-
-#             # 文件名：使用时间戳和序号确保唯一性
-#             # filename = f"slice_{W}x{H}_{i * GRID_SIZE + j + 1}.jpg"
-#             # 文件名：加入 unique_id
-#             filename = f"{unique_id}_slice_{W}x{H}_{i * GRID_SIZE + j + 1}.jpg"
-
-#             # 上传到 GCS
-#             blob = bucket.blob(filename)
-#             blob.upload_from_file(img_byte_arr, content_type='image/jpeg')
-
-#             # 设置公开访问权限 (如果存储桶策略允许)
-#             # blob.make_public()
-
-#             results.append(blob.public_url)
-
-#     return {"status": "success", "urls": results}
-
-
-# # 用于健康检查
-# @app.get("/")
-# def read_root():
-#     return {"Hello": "Image Slicer API is running"}
