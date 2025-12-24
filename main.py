@@ -67,6 +67,16 @@ async def slice_image(request_body: dict):
 
             cropped = img.crop((left, upper, right, lower))
 
+            border = 5
+            # 确保子图尺寸大于要裁掉的边界，避免报错
+            if cropped.width > border * 2 and cropped.height > border * 2:
+                cropped = cropped.crop((
+                    border,          # 左边界向内缩
+                    border,          # 上边界向内缩
+                    cropped.width - border,  # 右边界向内缩
+                    cropped.height - border  # 下边界向内缩
+                ))
+
             img_bytes = io.BytesIO()
             cropped.save(img_bytes, format="JPEG")
             img_bytes.seek(0)
