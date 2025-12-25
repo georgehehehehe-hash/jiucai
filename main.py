@@ -67,7 +67,7 @@ async def slice_image(request_body: dict):
 
             cropped = img.crop((left, upper, right, lower))
 
-            border = 15
+            border = 18
             # 确保子图尺寸大于要裁掉的边界，避免报错
             if cropped.width > border * 2 and cropped.height > border * 2:
                 cropped = cropped.crop((
